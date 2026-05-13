@@ -248,9 +248,15 @@ def add_expense(
     note: str = "",
 ) -> dict[str, Any]:
     """Add a personal expense (no group). Amount in INR. Date format: YYYY-MM-DD."""
+
     try:
         ac = _get_ac(api_key)
         uid = jwt_subject(ac.access_token)
+
+        # ---------------------------------------------------
+        # Insert expense
+        # ---------------------------------------------------
+
         res = ac.client.table("transactions").insert({
             "submitted_by": uid,
             "payer_id": uid,
@@ -262,15 +268,101 @@ def add_expense(
             "status": "approved",
             "group_id": None,
         }).execute()
+
         if not res.data:
-            return _with_pending_hint(_err("Insert returned no data."), ac)
+            return _with_pending_hint(
+                _err("Insert returned no data."),
+                ac
+            )
+
+        # ---------------------------------------------------
+        # Check triggers
+        # ---------------------------------------------------
+
+        triggered_alerts = []
+
+        trigger_rows = (
+            ac.client.table("expense_triggers")
+            .select("*")
+            .eq("user_id", uid)
+            .eq("category", category)
+            .execute()
+        ).data or []
+
+        today = datetime.strptime(date, "%Y-%m-%d").date()
+
+        for trigger in trigger_rows:
+
+            timespan = trigger["timespan"]
+            threshold = float(trigger["threshold"])
+
+            # -----------------------------------------------
+            # Calculate date range
+            # -----------------------------------------------
+
+            if timespan == "day":
+                start_date = today
+
+            elif timespan == "week":
+                start_date = today - timedelta(days=today.weekday())
+
+            elif timespan == "month":
+                start_date = today.replace(day=1)
+
+            else:
+                continue
+
+            # -----------------------------------------------
+            # Fetch matching transactions
+            # -----------------------------------------------
+
+            txns = (
+                ac.client.table("transactions")
+                .select("amount")
+                .eq("submitted_by", uid)
+                .eq("category", category)
+                .gte("expense_date", start_date.isoformat())
+                .lte("expense_date", today.isoformat())
+                .execute()
+            ).data or []
+
+            total_spending = sum(
+                float(t["amount"])
+                for t in txns
+            )
+
+            # -----------------------------------------------
+            # Threshold crossed
+            # -----------------------------------------------
+
+            if total_spending >= threshold:
+
+                triggered_alerts.append({
+                    "category": category,
+                    "timespan": timespan,
+                    "threshold": threshold,
+                    "current_total": round(total_spending, 2),
+                    "message": (
+                        f"{category} spending exceeded "
+                        f"{threshold} for this {timespan}"
+                    )
+                })
+
+        # ---------------------------------------------------
+        # Final response
+        # ---------------------------------------------------
+
         return _with_pending_hint({
             "status": "success",
             "id": str(res.data[0].get("id", "")),
             "message": "Expense added successfully",
+            "triggered_alerts": triggered_alerts,
         }, ac)
+
     except Exception as e:
-        return {"result": _err(f"Database error: {e!s}")}
+        return {
+            "result": _err(f"Database error: {e!s}")
+        }
 
 
 
@@ -659,135 +751,69 @@ def list_group_settlements(
         return {"result": _err(f"list_group_settlements: {e!s}")}
 
 
+# ---------------------------------------------------------------------------
+# Resource
+# ---------------------------------------------------------------------------
 
 @mcp.tool()
-def add_expense(
+def create_expense_trigger_by_category(
     api_key: str,
-    date: str,
-    amount: float,
     category: str,
-    subcategory: str = "",
-    note: str = "",
+    threshold: float,
+    timespan: str,
 ) -> dict[str, Any]:
-    """Add a personal expense (no group). Amount in INR. Date format: YYYY-MM-DD."""
+    """
+    Create an expense threshold trigger.
+
+    timespan:
+    - day
+    - week
+    - month
+    """
 
     try:
         ac = _get_ac(api_key)
         uid = jwt_subject(ac.access_token)
 
-        # ---------------------------------------------------
-        # Insert expense
-        # ---------------------------------------------------
+        # ---------------------------------------------
+        # Validate timespan
+        # ---------------------------------------------
 
-        res = ac.client.table("transactions").insert({
-            "submitted_by": uid,
-            "payer_id": uid,
-            "expense_date": date,
-            "amount": amount,
+        allowed_timespans = {"day", "week", "month"}
+
+        if timespan not in allowed_timespans:
+            return _err(
+                "Invalid timespan. Use: day, week, or month."
+            )
+
+        # ---------------------------------------------
+        # Insert trigger
+        # ---------------------------------------------
+
+        res = ac.client.table("expense_triggers").insert({
+            "user_id": uid,
             "category": category,
-            "subcategory": subcategory or "",
-            "note": note or "",
-            "status": "approved",
-            "group_id": None,
+            "threshold": threshold,
+            "timespan": timespan,
         }).execute()
 
         if not res.data:
-            return _with_pending_hint(
-                _err("Insert returned no data."),
-                ac
-            )
+            return _err("Could not create trigger.")
 
-        # ---------------------------------------------------
-        # Check triggers
-        # ---------------------------------------------------
+        trigger_id = str(res.data[0]["id"])
 
-        triggered_alerts = []
-
-        trigger_rows = (
-            ac.client.table("expense_triggers")
-            .select("*")
-            .eq("user_id", uid)
-            .eq("category", category)
-            .execute()
-        ).data or []
-
-        today = datetime.strptime(date, "%Y-%m-%d").date()
-
-        for trigger in trigger_rows:
-
-            timespan = trigger["timespan"]
-            threshold = float(trigger["threshold"])
-
-            # -----------------------------------------------
-            # Calculate date range
-            # -----------------------------------------------
-
-            if timespan == "day":
-                start_date = today
-
-            elif timespan == "week":
-                start_date = today - timedelta(days=today.weekday())
-
-            elif timespan == "month":
-                start_date = today.replace(day=1)
-
-            else:
-                continue
-
-            # -----------------------------------------------
-            # Fetch matching transactions
-            # -----------------------------------------------
-
-            txns = (
-                ac.client.table("transactions")
-                .select("amount")
-                .eq("submitted_by", uid)
-                .eq("category", category)
-                .gte("expense_date", start_date.isoformat())
-                .lte("expense_date", today.isoformat())
-                .execute()
-            ).data or []
-
-            total_spending = sum(
-                float(t["amount"])
-                for t in txns
-            )
-
-            # -----------------------------------------------
-            # Threshold crossed
-            # -----------------------------------------------
-
-            if total_spending >= threshold:
-
-                triggered_alerts.append({
-                    "category": category,
-                    "timespan": timespan,
-                    "threshold": threshold,
-                    "current_total": round(total_spending, 2),
-                    "message": (
-                        f"{category} spending exceeded "
-                        f"{threshold} for this {timespan}"
-                    )
-                })
-
-        # ---------------------------------------------------
-        # Final response
-        # ---------------------------------------------------
-
-        return _with_pending_hint({
+        return {
             "status": "success",
-            "id": str(res.data[0].get("id", "")),
-            "message": "Expense added successfully",
-            "triggered_alerts": triggered_alerts,
-        }, ac)
+            "trigger_id": trigger_id,
+            "message": (
+                f"Trigger created for {category} "
+                f"with threshold ₹{threshold} "
+                f"per {timespan}"
+            )
+        }
 
     except Exception as e:
-        return {
-            "result": _err(f"Database error: {e!s}")
-        }
-# ---------------------------------------------------------------------------
-# Resource
-# ---------------------------------------------------------------------------
+        return _err(f"Error creating trigger: {e!s}")
 
 @mcp.resource("expense:///categories", mime_type="application/json")
 def categories() -> str:
