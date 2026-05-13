@@ -270,10 +270,7 @@ def add_expense(
         }).execute()
 
         if not res.data:
-            return _with_pending_hint(
-                _err("Insert returned no data."),
-                ac
-            )
+            return _err("Insert returned no data.")
 
         # ---------------------------------------------------
         # Check triggers
@@ -352,12 +349,12 @@ def add_expense(
         # Final response
         # ---------------------------------------------------
 
-        return _with_pending_hint({
-            "status": "success",
-            "id": str(res.data[0].get("id", "")),
-            "message": "Expense added successfully",
-            "triggered_alerts": triggered_alerts,
-        }, ac)
+        return {
+    "status": "success",
+    "id": str(res.data[0].get("id", "")),
+    "message": "Expense added successfully",
+    "triggered_alerts": triggered_alerts,
+}
 
     except Exception as e:
         return {
