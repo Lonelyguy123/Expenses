@@ -29,6 +29,7 @@ from typing import Any
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from datetime import datetime, timedelta
+import sqlparse
 
 from expense_mcp.jwt_sub import jwt_subject
 from expense_mcp.settlements import accumulate_group_balances, simplify_debts
@@ -68,6 +69,27 @@ def _err(message: str) -> dict[str, str]:
 
 def _jsonable_row(row: dict[str, Any]) -> dict[str, Any]:
     return {k: float(v) if isinstance(v, Decimal) else v for k, v in row.items()}
+
+
+def is_read_sql(text: str) -> bool:
+    """Quick check that the text is a read-only SQL statement."""
+    if not text or not isinstance(text, str):
+        return False
+    try:
+        parsed = sqlparse.parse(text.strip())
+        if not parsed:
+            return False
+        # find first meaningful token
+        first = None
+        for t in parsed[0].tokens:
+            if not t.is_whitespace and t.value.strip():
+                first = t.value
+                break
+        if not first:
+            return False
+        return first.strip().upper() in {"SELECT", "WITH", "SHOW", "DESCRIBE", "PRAGMA"}
+    except Exception:
+        return False
 
 
 def _get_ac(api_key: str) -> AuthedClient:
@@ -748,6 +770,76 @@ def list_group_settlements(
         return {"result": _err(f"list_group_settlements: {e!s}")}
 
 
+@mcp.tool()
+async def no_tool_match_only_for_viewing_no_modification_of_database(api_key: str, input_text: str) -> dict[str, Any]:
+    '''
+    If no tool is matching for the prompt given, this function is called. No inserts or modifications to the database should be done in this function. This is only for viewing or selecting purposes.
+    '''
+    ac = _get_ac(api_key)
+    def run(query: str) -> list[dict]:
+        with ac.client.cursor() as cur:
+            cur.execute(query)
+            cols = [desc[0] for desc in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    tables_columns = run("""
+        SELECT t.table_name, c.column_name, c.data_type, c.is_nullable, c.column_default
+        FROM information_schema.tables t
+        JOIN information_schema.columns c ON t.table_name = c.table_name AND t.table_schema = c.table_schema
+        WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+        ORDER BY t.table_name, c.ordinal_position
+    """)
+
+    foreign_keys = run("""
+        SELECT kcu.table_name AS from_table, kcu.column_name AS from_column,
+            ccu.table_name AS to_table, ccu.column_name AS to_column
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+        JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+        WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
+    """)
+
+    primary_keys = run("""
+        SELECT kcu.table_name, kcu.column_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+        WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'
+    """)
+
+    schema_context = f"Tables & Columns:\n{tables_columns}\n\nPrimary Keys:\n{primary_keys}\n\nForeign Keys:\n{foreign_keys}"
+
+    prompt_response = await mcp.render_prompt(
+        "no_tool_match_only",
+        {"schema_context": schema_context, "input_text": input_text},
+    )
+
+    sql_text = prompt_response.get("result") if isinstance(prompt_response, dict) else str(prompt_response)
+
+    if is_read_sql(sql_text):
+        
+       
+
+
+import sqlparse
+
+
+def is_read_sql(text: str) -> bool:
+    parsed = sqlparse.parse(text.strip())
+    if not parsed:
+        return False
+    first = parsed[0].tokens[0].value.upper()
+    return first in {"SELECT", "WITH", "SHOW", "DESCRIBE", "PRAGMA"}
+
+@mcp.prompt("no_tool_match_only")
+def no_tool_match_only_prompt(
+    schema_context: str,
+    input_text: str,
+) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": "You are a PostgreSQL expert. Given the database schema context and a user query, write a SQL query to answer the question. Only write SQL, no explanations. Also, return a message if the input mentions inserting or modifying the database. If the input is asking for data retrieval, write the SQL query to retrieve the data."},
+        {"role": "system", "content": schema_context},
+        {"role": "user", "content": f"Write a SQL query for: {input_text}"},
+    ]
 # ---------------------------------------------------------------------------
 # Resource
 # ---------------------------------------------------------------------------
