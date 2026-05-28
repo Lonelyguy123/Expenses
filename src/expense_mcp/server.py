@@ -789,10 +789,8 @@ async def no_tool_match_only_for_viewing_no_modification_of_database(api_key: st
     """
     ac = _get_ac(api_key)
     def run(query: str) -> list[dict]:
-        with ac.client.cursor() as cur:
-            cur.execute(query)
-            cols = [desc[0] for desc in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+        result = ac.client.rpc("exec_sql", {"query": query}).execute()
+        return result.data
 
     tables_columns = run("""
         SELECT t.table_name, c.column_name, c.data_type, c.is_nullable, c.column_default
