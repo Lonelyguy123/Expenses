@@ -772,9 +772,21 @@ def list_group_settlements(
 
 @mcp.tool()
 async def no_tool_match_only_for_viewing_no_modification_of_database(api_key: str, input_text: str) -> dict[str, Any]:
-    '''
-    If no tool is matching for the prompt given, this function is called. No inserts or modifications to the database should be done in this function. This is only for viewing or selecting purposes.
-    '''
+    """
+    FALLBACK READ-ONLY QUERY TOOL.
+
+    Use this tool ONLY when:
+    - the user's request cannot be handled by any existing tool
+    - the user is asking to VIEW or SEARCH data
+    - the request requires custom querying
+
+    DO NOT use this tool if:
+    - another specific tool already matches
+    - the user wants to add/update/delete data
+    - the request performs actions
+
+    This tool is strictly READ ONLY.
+    """
     ac = _get_ac(api_key)
     def run(query: str) -> list[dict]:
         with ac.client.cursor() as cur:
