@@ -815,9 +815,14 @@ async def no_tool_match_only_for_viewing_no_modification_of_database(api_key: st
 
     sql_text = prompt_response.get("result") if isinstance(prompt_response, dict) else str(prompt_response)
 
-    if is_read_sql(sql_text):
-        
-       
+    if not is_read_sql(sql_text):
+        return _err("Generated query is not a read-only statement. Blocked.")
+
+    try:
+        rows = run(sql_text)          # <-- same run() you already have
+        return {"status": "success", "data": rows}
+    except Exception as e:
+        return _err(f"Query execution failed: {e!s}")
 
 
 import sqlparse
