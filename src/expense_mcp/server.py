@@ -825,15 +825,6 @@ async def no_tool_match_only_for_viewing_no_modification_of_database(api_key: st
         return _err(f"Query execution failed: {e!s}")
 
 
-import sqlparse
-
-
-def is_read_sql(text: str) -> bool:
-    parsed = sqlparse.parse(text.strip())
-    if not parsed:
-        return False
-    first = parsed[0].tokens[0].value.upper()
-    return first in {"SELECT", "WITH", "SHOW", "DESCRIBE", "PRAGMA"}
 
 @mcp.prompt("no_tool_match_only")
 def no_tool_match_only_prompt(
