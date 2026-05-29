@@ -21,6 +21,7 @@ SQL migrations (run in order):
 from __future__ import annotations
 from mcp.types import PromptMessage, TextContent
 
+import logging
 import json
 import os
 from decimal import Decimal
@@ -40,6 +41,8 @@ from expense_mcp.supabase_client import (
     get_client_for_api_key,
     get_client_for_env_token,
 )
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -822,6 +825,8 @@ async def no_tool_match_only_for_viewing_no_modification_of_database(api_key: st
     messages = no_tool_match_only_prompt(schema_context=schema_context, input_text=input_text)
     sql_text = messages[0]["content"]  # the raw prompt text going to the LLM
     
+    logger.warning(f"Generated SQL: {sql_text}")
+
     if not is_read_sql(sql_text):
         return _err("Generated query is not a read-only statement. Blocked.")
 
@@ -842,12 +847,13 @@ def no_tool_match_only_prompt(
         {
             "role": "user",
             "content": (
-                f"You are a PostgreSQL expert. Given the database schema context and a user query, "
-                f"write a SQL query to answer the question. Only write SQL, no explanations. "
-                f"Return a message if the input mentions inserting or modifying the database.\n\n"
-                f"Schema:\n{schema_context}\n\n"
-                f"Write a SQL query for: {input_text}"
-            )
+            f"You are a PostgreSQL expert. Your ONLY job is to write a single read-only SELECT query. "
+            f"NEVER write INSERT, UPDATE, DELETE, DROP, CREATE, or any statement that modifies data. "
+            f"If the request cannot be answered with a SELECT query, respond with: SELECT 1 WHERE false; "
+            f"Output ONLY the raw SQL — no explanations, no markdown, no backticks.\n\n"
+            f"Schema:\n{schema_context}\n\n"
+            f"Question: {input_text}"
+        )
         }
     ]
 # ---------------------------------------------------------------------------
