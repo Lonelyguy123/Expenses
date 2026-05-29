@@ -832,7 +832,7 @@ async def no_tool_match_only_for_viewing_no_modification_of_database(api_key: st
         messages=messages,
         max_tokens=1024
     )
-    sql_text = response.choices[0].message.content.strip()
+    sql_text = response.choices[0].message.content.strip().rstrip(";")
 
     
     logger.warning(f"Generated SQL: {sql_text}")
