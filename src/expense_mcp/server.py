@@ -819,13 +819,9 @@ async def no_tool_match_only_for_viewing_no_modification_of_database(api_key: st
 
     schema_context = f"Tables & Columns:\n{tables_columns}\n\nPrimary Keys:\n{primary_keys}\n\nForeign Keys:\n{foreign_keys}"
 
-    prompt_response = await mcp.render_prompt(
-        "no_tool_match_only",
-        {"schema_context": schema_context, "input_text": input_text},
-    )
-
-    sql_text = prompt_response.get("result") if isinstance(prompt_response, dict) else str(prompt_response)
-
+    messages = no_tool_match_only_prompt(schema_context=schema_context, input_text=input_text)
+    sql_text = messages[0]["content"]  # the raw prompt text going to the LLM
+    
     if not is_read_sql(sql_text):
         return _err("Generated query is not a read-only statement. Blocked.")
 
@@ -841,15 +837,18 @@ async def no_tool_match_only_for_viewing_no_modification_of_database(api_key: st
 def no_tool_match_only_prompt(
     schema_context: str,
     input_text: str,
-) -> list[PromptMessage]:
+) -> list[dict]:
     return [
-        PromptMessage(
-            role="user",
-            content=TextContent(
-                type="text",
-                text=f"You are a PostgreSQL expert. Given the database schema context and a user query, write a SQL query to answer the question. Only write SQL, no explanations. Also, return a message if the input mentions inserting or modifying the database.\n\nSchema:\n{schema_context}\n\nWrite a SQL query for: {input_text}"
+        {
+            "role": "user",
+            "content": (
+                f"You are a PostgreSQL expert. Given the database schema context and a user query, "
+                f"write a SQL query to answer the question. Only write SQL, no explanations. "
+                f"Return a message if the input mentions inserting or modifying the database.\n\n"
+                f"Schema:\n{schema_context}\n\n"
+                f"Write a SQL query for: {input_text}"
             )
-        )
+        }
     ]
 # ---------------------------------------------------------------------------
 # Resource
