@@ -9,6 +9,7 @@ dependencies = [
   "supabase>=2.8.0",
   "python-dotenv>=1.0.0",
   "sqlparse>=0.5.5",
+  "groq>=1.4.0",
 ]
 
 [project.scripts]

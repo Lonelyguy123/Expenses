@@ -21,6 +21,7 @@ SQL migrations (run in order):
 from __future__ import annotations
 from mcp.types import PromptMessage, TextContent
 
+from groq import Groq
 import logging
 import json
 import os
@@ -823,7 +824,16 @@ async def no_tool_match_only_for_viewing_no_modification_of_database(api_key: st
     schema_context = f"Tables & Columns:\n{tables_columns}\n\nPrimary Keys:\n{primary_keys}\n\nForeign Keys:\n{foreign_keys}"
 
     messages = no_tool_match_only_prompt(schema_context=schema_context, input_text=input_text)
-    sql_text = messages[0]["content"]  # the raw prompt text going to the LLM
+
+    # Actually call the LLM to generate SQL
+    client = Groq(api_key=os.environ["GROQ_API_KEY"])
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=messages,
+        max_tokens=1024
+    )
+    sql_text = response.choices[0].message.content.strip()
+
     
     logger.warning(f"Generated SQL: {sql_text}")
 
