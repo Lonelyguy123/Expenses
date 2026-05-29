@@ -18,6 +18,7 @@ SQL migrations (run in order):
   006_security_audit.sql                  (optional)
 """
 
+from mcp.types import Message, PromptMessage, TextContent
 from __future__ import annotations
 
 import json
@@ -840,11 +841,15 @@ async def no_tool_match_only_for_viewing_no_modification_of_database(api_key: st
 def no_tool_match_only_prompt(
     schema_context: str,
     input_text: str,
-) -> list[dict[str, str]]:
+) -> list[PromptMessage]:
     return [
-        {"role": "system", "content": "You are a PostgreSQL expert. Given the database schema context and a user query, write a SQL query to answer the question. Only write SQL, no explanations. Also, return a message if the input mentions inserting or modifying the database. If the input is asking for data retrieval, write the SQL query to retrieve the data."},
-        {"role": "system", "content": schema_context},
-        {"role": "user", "content": f"Write a SQL query for: {input_text}"},
+        PromptMessage(
+            role="user",
+            content=TextContent(
+                type="text",
+                text=f"You are a PostgreSQL expert. Given the database schema context and a user query, write a SQL query to answer the question. Only write SQL, no explanations. Also, return a message if the input mentions inserting or modifying the database.\n\nSchema:\n{schema_context}\n\nWrite a SQL query for: {input_text}"
+            )
+        )
     ]
 # ---------------------------------------------------------------------------
 # Resource
