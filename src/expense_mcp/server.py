@@ -19,7 +19,7 @@ SQL migrations (run in order):
 """
 
 from __future__ import annotations
-from mcp.types import Message, PromptMessage, TextContent
+from mcp.types import PromptMessage, TextContent
 
 import json
 import os
