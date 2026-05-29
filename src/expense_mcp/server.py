@@ -18,8 +18,8 @@ SQL migrations (run in order):
   006_security_audit.sql                  (optional)
 """
 
-from mcp.types import Message, PromptMessage, TextContent
 from __future__ import annotations
+from mcp.types import Message, PromptMessage, TextContent
 
 import json
 import os
